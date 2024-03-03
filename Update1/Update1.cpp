@@ -37,7 +37,7 @@ int Code(double* statistic, char* name, unsigned char* result, int *countDigit )
 	int high = 99999;
 	int low = 0;
 	int underflow_bits = 0;
-	printf("high\tlow\tOutputDigit\tunderflow_bits\n");
+	printf("low\thigh\tOutputDigit\tunderflow_bits\n");
 
 	for (int i = 0; i < count; i++)
 	{
@@ -69,7 +69,8 @@ int Code(double* statistic, char* name, unsigned char* result, int *countDigit )
 		else
 		{
 			while (((int)(high / 10000) - (int)(low / 10000)) == 1 &&
-				(high / 1000) % 10 == 0 && (low / 1000) % 10 == 9)
+				(high / 1000) % 10 == 0 && (low / 1000) % 10 == 9 &&
+				low/10000 != 0 && high/10000 != 0)
 			{
 				high = (high % 1000) * 10 + (high / 10000) * 10000 + 9;
 				low = (low % 1000) * 10 + (low / 10000) * 10000;
@@ -79,48 +80,86 @@ int Code(double* statistic, char* name, unsigned char* result, int *countDigit )
 		}
 	}
 
-	int tempData = (high + low) / 2;
-	result[*countDigit] = tempData / 10000;
+	result[*countDigit] = low / 10000;
 	(*countDigit)++;
-	result[*countDigit] = tempData / 1000 % 10;
+	result[*countDigit] = low / 1000 % 10;
 	(*countDigit)++;
-	result[*countDigit] = tempData / 100 % 10;
+	result[*countDigit] = low / 100 % 10;
 	(*countDigit)++;
-	result[*countDigit] = tempData / 10 % 10;
+	result[*countDigit] = low / 10 % 10;
 	(*countDigit)++;
-	result[*countDigit] = tempData % 10;
+	result[*countDigit] = low % 10;
 	(*countDigit)++;
 	return count;
 }
 
-char GetDecodeChar(double* statistic, int code)
+char GetDecodeChar(double* statistic, int code, int range, int low)
 {
-	int range = 100000;
 	for (int i = 1; i < 255; i++)
 	{
-		if ((int)(statistic[i - 1] * range) <= code &&
-			code < (int)(statistic[i] * range) &&
-			(int)(statistic[i - 1] * range) != (int)(statistic[i] * range))
+		if ((int)(statistic[i - 1] * range + low) <= code &&
+			code < (int)(statistic[i] * range + low))
 		{
-			printf("%d\t%c\t%d - %d\n", code, (char)i, (int)(statistic[i - 1] * range), (int)(statistic[i] * range));
+			printf("%d\t%c\t%d - %d\n", code, (char)i, (int)(statistic[i - 1] * range + low), (int)(statistic[i] * range + low));
 			return (char)i;
 		}
 	}
-	return (char)' ';
+	return (char)'\0';
 }
 
-void Decode(double* statistic, unsigned char* result, int countDigit, int countB)
+void Decode(double* statistic, unsigned char* result, int countDigit, int count)
 {
-	int data = 0, i;
-	for (i = 0; i < 5; i++)
-		data = data * 10 + result[i];
+	int data = 0, numDigit;
+	for (numDigit = 0;  numDigit < 5; numDigit++)
+		data = data * 10 + result[numDigit];
 
-	while (data && countB)
+	int high = 99999;
+	int low = 0;
+	int underflow_bits = 0;
+	printf("code\tchar\tlow - high\tunderflow_bits\n");
+	for (int i = 0; i < count; i++)
 	{
-		unsigned char index = GetDecodeChar(statistic, data);
-		data = data * (1.0 / (statistic[index] - statistic[index - 1]));
-		data = data % 100000;
-		countB--;
+		unsigned char ch = GetDecodeChar(statistic, data, high - low + 1, low);
+		if (ch == '\0')
+		{
+			perror("-----ERROR DECODE-----\n");
+			exit(1);
+		}
+		int temp = high;
+		high = low + high_range(statistic, high - low + 1, ch);
+		low = low + low_range(statistic, temp - low + 1, ch);
+
+		if ((int)((high) / 10000) == (int)(low / 10000) && 
+			(int)(low / 10000) == (int)(data / 10000) &&
+			(int)((high) / 10000) == (int)(data / 10000))
+		{
+			low = low * 10 + 0;
+			low %= 100000;
+			high = high * 10 + 9;
+			high %= 100000;
+			data = data * 10 + result[numDigit];
+			data %= 100000;
+			numDigit++;
+			while (underflow_bits)
+			{
+				data = data * 10 + result[numDigit];
+				data %= 100000;
+				numDigit++;
+				underflow_bits--;
+			}
+		}
+		else
+		{
+			while (((int)(high / 10000) - (int)(low / 10000)) == 1 &&
+				(high / 1000) % 10 == 0 && (low / 1000) % 10 == 9 &&
+				low / 10000 != 0 && high / 10000 != 0)
+			{
+				high = (high % 1000) * 10 + (high / 10000) * 10000 + 9;
+				low = (low % 1000) * 10 + (low / 10000) * 10000;
+				underflow_bits++;
+				//printf("%d\t%d\t\t\t%d\n", low, high, underflow_bits);
+			}
+		}
 	}
 }
 
@@ -136,6 +175,8 @@ int main()
 	int count = 0;
 	printf("\n--------------------------Code----------------------------------\n");
 	int countB = Code(statistic, word, result, &count);
+	printf("\n----------------------------------------------------------------\n");
+	PrintResult(result, count);
 	printf("\n-------------------------Decode---------------------------------\n");
 	Decode(statistic, result, count, countB);
 }
